@@ -1,43 +1,25 @@
 /**
- * Host plugin: owns the `promptStar` Remote namespace. The client ⭐ button
- * calls `ctx.remote.promptStar.generate(...)`; this service reads the project
- * doc files and calls the configured LLM. Mirrors the workspace-controller
- * pattern: extend {@link TypertRemoteService}, declare the Cordis service,
- * decorate each RPC with `@Remote`.
+ * Host entry for dsh-prompt-star.
+ *
+ * The ⭐ button is a pure client plugin (see `src/client/`): it reads the
+ * conversation draft via the session input snapshot, reads project doc files
+ * through the already-mounted `workspaceFiles` remote, and assembles a fuller,
+ * more efficient prompt entirely on the client. It needs no custom host↔client
+ * RPC, so this host half only provides a minimal Cordis plugin that keeps the
+ * bundle mounted as a Loader entry — which is what makes `dsh-client-modules`
+ * discover and serve its client bundle.
+ *
+ * This entry follows the standard DSH plugin export contract `apply(ctx)`.
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import { generatePrompt } from './host/generate.ts'
-import type { PromptStarRequest, PromptStarResult } from './types.ts'
 
-export type * from './types.ts'
-
-declare module '@deepseek-ai/cordis' {
-  interface Context {
-    /** Host business API and Remote namespace owner for prompt-star. */
-    promptStar: PromptStarService
-  }
+/**
+ * Minimal host plugin body. The button logic lives entirely in the client
+ * bundle; mounting this row is what lets the web app serve `lib/client.js`.
+ */
+export function apply(_ctx: Context): void {
+  // no-op by design: the client plugin does the real work.
 }
 
-/** Host service backing the generated `ctx.remote.promptStar` namespace. */
-export class PromptStarService extends TypertRemoteService {
-  static inject = ['typert', 'agentDefaultModel']
-
-  /** @param ctx - Host context exposing the LLM and workspace services. */
-  constructor(ctx: Context) {
-    super(ctx, 'promptStar', { namespace: 'promptStar' })
-  }
-
-  /**
-   * Turn a draft + project context into a fuller prompt.
-   * @param request - draft and optional workspace root / intent / signal.
-   * @returns generated prompt and the doc files probed for context.
-   */
-  @Remote('generate')
-  async generate(request: PromptStarRequest): Promise<PromptStarResult> {
-    return generatePrompt(this.ctx, request)
-  }
-}
-
-export default PromptStarService
+export default apply

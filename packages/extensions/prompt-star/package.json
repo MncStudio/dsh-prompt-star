@@ -1,7 +1,7 @@
 {
   "name": "dsh-prompt-star",
-  "version": "0.1.1",
-  "description": "DSH plugin: a ⭐ button beside the conversation input that reads your draft + the project's doc files and generates a fuller, more efficient prompt, filling the input directly (Ctrl/Cmd+Z to undo).",
+  "version": "0.1.2",
+  "description": "DSH plugin: a ⭐ button beside the conversation input that reads your draft + the project's doc files and turns them into a fuller, more efficient prompt, filling the input directly (Ctrl/Cmd+Z to undo).",
   "publishConfig": {
     "access": "public"
   },

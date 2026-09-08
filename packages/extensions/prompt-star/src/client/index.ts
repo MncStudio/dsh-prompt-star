@@ -1,21 +1,16 @@
 /**
  * Client plugin: mounts the ⭐ button into the composer input tool row
  * (`conversation.input.right`, a session-scoped list slot) and wires it to the
- * host `promptStar` Remote namespace. Loaded by the web app through the
- * `dsh.client` manifest; the button reads the draft via the session input
- * snapshot and writes the result back with `inputActions.setDraft`.
+ * already-mounted `workspaceFiles` remote.
+ *
+ * This is a pure-client plugin: it reads the draft via the session input
+ * snapshot, reads project doc files through `ctx.remote.workspaceFiles`, and
+ * assembles a fuller prompt on the client — no custom host↔client RPC is needed,
+ * so it works in any stock `dsh web` build.
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { PromptStarRequest, PromptStarResult } from '../types.ts'
-import { StarButton } from './StarButton.tsx'
-
-export type * from '../types.ts'
-
-/** Client-facing shape of the host `promptStar` Remote namespace. */
-export interface PromptStarRemote {
-  generate(request: PromptStarRequest): Promise<PromptStarResult>
-}
+import { StarButton, type WorkspaceFilesRemote } from './StarButton.tsx'
 
 interface PromptStarSlots {
   inject(name: string, setup: () => void): void
@@ -24,37 +19,36 @@ interface PromptStarSlots {
       name: string
       id: string
       order: number
-      inject: () => { generate: PromptStarRemote['generate'] }
+      inject: () => { workspaceFiles: WorkspaceFilesRemote }
     },
     component: typeof StarButton,
   ): void
 }
 
 type PromptStarClientScope = Context & {
-  remote: { promptStar: PromptStarRemote }
+  remote: { workspaceFiles: WorkspaceFilesRemote }
   slots: PromptStarSlots
 }
 
-/** Cordis services this client plugin needs. */
-export const inject = ['slots', 'remote']
+/** Cordis services this client plugin needs: the slot registry and the mounted
+ *  `workspaceFiles` remote (both provided by the stock web-app composition). */
+export const inject = ['slots', 'remote', 'remote.workspaceFiles']
 
 /**
  * Client plugin body: register the ⭐ button once the slot registry and the
- * remote face are up.
+ * `workspaceFiles` remote are up.
  * @param ctx - client root context.
  */
 export function apply(ctx: Context): void {
-  ctx.inject(['slots', 'remote'], (scope) => {
-    const promptStarScope = scope as PromptStarClientScope
-    const promptStar = promptStarScope.remote.promptStar
-    promptStarScope.slots.inject('conversation.input.right', () => {
-      promptStarScope.slots.register({
-      name: 'conversation.input.right',
-      id: 'prompt-star',
-      order: 0,
-      // The slot's inject face is what the component receives in addition to
-      // the session standard seat (useInput / inputActions / useConversation).
-      inject: () => ({ generate: promptStar.generate }),
+  ctx.inject(['slots', 'remote', 'remote.workspaceFiles'], (scope) => {
+    const root = scope as PromptStarClientScope
+    const { workspaceFiles } = root.remote
+    root.slots.inject('conversation.input.right', () => {
+      root.slots.register({
+        name: 'conversation.input.right',
+        id: 'prompt-star',
+        order: 0,
+        inject: () => ({ workspaceFiles }),
       }, StarButton)
     })
   })

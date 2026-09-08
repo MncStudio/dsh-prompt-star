@@ -13,7 +13,20 @@ import type { Context } from '@deepseek-ai/cordis'
 import { StarButton } from './StarButton.tsx'
 import { RPC_CHANNEL, EP_CONTEXT, type ContextRpcResult } from '../types'
 
-interface PromptStarClientScope extends Context {
+/** Local structural face of the client services this plugin uses. */
+interface ClientScope {
+  slots: {
+    inject(name: string, setup: () => void): void
+    register(
+      entry: {
+        name: string
+        id: string
+        order: number
+        inject: () => { context(): Promise<ContextRpcResult> }
+      },
+      component: typeof StarButton,
+    ): void
+  }
   connection: {
     rpc: {
       call(
@@ -37,7 +50,7 @@ export const inject = ['slots', 'connection']
  */
 export function apply(ctx: Context): void {
   ctx.inject(['slots', 'connection'], (scope) => {
-    const root = scope as unknown as PromptStarClientScope
+    const root = scope as unknown as ClientScope
     const rpc = root.connection.rpc
 
     root.slots.inject('conversation.input.right', () => {

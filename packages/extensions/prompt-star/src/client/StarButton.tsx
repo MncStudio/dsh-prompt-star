@@ -26,18 +26,8 @@ export interface StarButtonProps {
   inputActions: { setDraft(text: string): void }
 }
 
-/** Common project-doc filenames probed on the host as prompt context. */
-const DOC_CANDIDATES: readonly string[] = [
-  'README.md',
-  'README',
-  'AGENTS.md',
-  'CLAUDE.md',
-  'CONTRIBUTING.md',
-  'docs/README.md',
-  'docs/index.md',
-  '.cursorrules',
-]
-
+/** Common project-doc filenames are probed on the HOST; the client never
+ *  enumerates them (it just asks the host for the read context). */
 const buttonStyle: CSSProperties = {
   all: 'unset',
   display: 'inline-flex',

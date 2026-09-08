@@ -8,11 +8,36 @@
  * read happens here and is shipped to the browser over the Connection channel.
  *
  * This entry follows the standard DSH plugin export contract `apply(ctx)`.
+ *
+ * The host-side services (`ctx.connection.rpc`, `ctx.fs`) are consumed through
+ * small local structural types instead of importing the harness packages, so the
+ * plugin's `tsc` stays inside its own `rootDir` and never drags harness source
+ * files into its program.
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { ConnectionRpcResult } from '@deepseek-ai/dsh-client-connection'
 import { RPC_CHANNEL, EP_CONTEXT } from './types'
+
+/** Local mirror of the hosted Connection RPC result envelope. */
+type ConnectionRpcResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: { code: string; message: string; details: object } }
+
+/** Minimal structural face of the host services this plugin uses. */
+interface HostContext {
+  connection: {
+    rpc: {
+      handle(
+        channel: string,
+        handler: (endpoint: string, payload: unknown, signal?: AbortSignal) => Promise<ConnectionRpcResult<unknown>>,
+      ): () => Promise<void>
+    }
+  }
+  fs: {
+    resolve(path: string, opts?: { cwd?: string }): unknown
+    readText(target: unknown, signal?: AbortSignal): Promise<string>
+  }
+}
 
 /** Project doc files probed, in priority order. Reads are best-effort. */
 const DOC_CANDIDATES: readonly string[] = [
@@ -34,9 +59,11 @@ const MAX_DOC_CHARS = 4000
  * @param ctx - host root context.
  */
 export function apply(ctx: Context): void {
+  const host = ctx as unknown as HostContext
+
   // Registrations on `ctx.connection.rpc` belong to this plugin's Cordis fiber,
   // so they are removed automatically when the plugin is torn down.
-  ctx.connection.rpc.handle(
+  host.connection.rpc.handle(
     RPC_CHANNEL,
     async (endpoint, payload): Promise<ConnectionRpcResult<unknown>> => {
       if (endpoint !== EP_CONTEXT) {
@@ -54,8 +81,8 @@ export function apply(ctx: Context): void {
 
         for (const name of DOC_CANDIDATES) {
           try {
-            const target = ctx.fs.resolve(name, { cwd: root })
-            const text = await ctx.fs.readText(target)
+            const target = host.fs.resolve(name, { cwd: root })
+            const text = await host.fs.readText(target)
             const trimmed = text?.trim()
             if (trimmed && !seen.has(name)) {
               seen.add(name)

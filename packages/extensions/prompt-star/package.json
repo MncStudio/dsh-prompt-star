@@ -1,6 +1,6 @@
 {
   "name": "dsh-prompt-star",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DSH plugin: a ⭐ button beside the conversation input that reads your draft + the project's doc files and generates a fuller, more efficient prompt, filling the input directly (Ctrl/Cmd+Z to undo).",
   "publishConfig": {
     "access": "public"
@@ -59,11 +59,13 @@
   "devDependencies": {
     "@types/react": "~18.3.1",
     "react": "^18.3.1",
-    "tsdown": "^0.14.0",
+    "tsdown": "^0.22.2",
     "typescript": "^5.5.0"
   },
   "scripts": {
     "bundle": "tsdown",
+    "bundle:host": "tsdown --env.DSH_BUILD_FACE host",
+    "bundle:client": "tsdown --env.DSH_BUILD_FACE client",
     "watch": "tsdown --watch"
   },
   "license": "MIT"

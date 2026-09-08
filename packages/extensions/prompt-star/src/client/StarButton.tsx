@@ -58,10 +58,10 @@ export function StarButton({
     setBusy(true)
     setError(undefined)
     try {
+      const workspaceRoot = useActiveRoot?.()
       const result = await generate({
         draft,
-        workspaceRoot: useActiveRoot?.(),
-        intent: undefined,
+        ...(workspaceRoot === undefined ? {} : { workspaceRoot }),
       })
       if (result.prompt && result.prompt !== draft) {
         inputActions.setDraft(result.prompt)

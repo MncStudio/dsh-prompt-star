@@ -14,6 +14,11 @@ import { clientBundle } from '../../client/tsdown.client.ts'
  */
 export default clientBundle(
   'dsh-prompt-star',
-  ['src/index.ts'],
+  // `clientBundle` deliberately consumes TypeScript's emitted JavaScript.
+  // Besides producing declarations, that pass lowers standard decorators such
+  // as `@Remote('generate')`. Passing `src/index.ts` directly makes tsdown
+  // preserve the decorator token in `lib/index.js`, which Node cannot parse
+  // when DSH loads the host plugin.
+  ['lib/types/index.js'],
   { hostPhase: true },
 )

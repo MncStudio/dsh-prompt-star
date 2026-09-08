@@ -10,7 +10,7 @@ import { isAbsolute, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { FinishReason, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
-import { deadline, MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
+import { deadline } from '@deepseek-ai/dsh-timeout'
 import { deepFreeze } from '@deepseek-ai/dsh-util-values'
 import type { DocFileSource, PromptStarRequest, PromptStarResult } from '../types.ts'
 
@@ -26,12 +26,15 @@ const TIMEOUT_MS = 20_000
 /** Timeout code registered for the capability. */
 const PROMPT_STAR_TIMEOUT_CODE = 'PROMPT_STAR_TIMEOUT'
 /**
- * Model-visible purpose. `dsh-llm` types this as the union
- * `'compaction' | 'session-title'`; this plugin's own purpose requires a
- * one-line addition to that union (see README "Patch dsh-llm"). The cast keeps
- * this package compiling before the patch lands.
+ * The host's configured default route. It is structural here so the plugin can
+ * run against released DSH packages without depending on internal model types.
  */
-const PURPOSE = 'prompt-star' as NonNullable<GenerateOptions['purpose']>
+interface DefaultModelRoute {
+  currentSelection(): {
+    provider: string
+    model: string
+  }
+}
 
 /** Inline template skeletons the model reuses as a shape, not a strict form. */
 const SKELETONS = [
@@ -148,6 +151,8 @@ export async function generatePrompt(
     : `草稿：\n${request.draft}`
 
   try {
+    const route = (ctx as Context & { agentDefaultModel: DefaultModelRoute })
+      .agentDefaultModel.currentSelection()
     const messages: Message[] = [createUserMessage({
       content: [{ type: 'text', text: userText }],
       source: { kind: 'plugin', plugin: 'dsh-prompt-star' },
@@ -155,12 +160,11 @@ export async function generatePrompt(
 
     using callDeadline = deadline(request.signal ?? new AbortController().signal, TIMEOUT_MS, PROMPT_STAR_TIMEOUT_CODE)
     const options: GenerateOptions = deepFreeze({
-      provider: undefined,
-      model: undefined,
+      provider: route.provider,
+      model: route.model,
       messages,
       system,
       maxTokens: MAX_OUTPUT_TOKENS,
-      purpose: PURPOSE,
       signal: callDeadline.signal,
     })
 
@@ -185,7 +189,7 @@ export async function generatePrompt(
       prompt,
       intent: request.intent ?? inferIntent(prompt, system),
       sources,
-      model: undefined, // route resolved by the plugin layer when configured
+      model: route,
       degraded: false,
     }
   } catch (error) {
@@ -195,7 +199,6 @@ export async function generatePrompt(
       prompt: request.draft,
       intent: request.intent ?? 'generic',
       sources,
-      model: undefined,
       degraded: true,
     }
   }
@@ -203,7 +206,7 @@ export async function generatePrompt(
 
 /** Cheap intent label: prefer the supplied one, else the first skeleton hit. */
 function inferIntent(prompt: string, _system: string): string {
-  const lowered = prompt.toLowerCase()
+  void prompt
   const hit = SKELETONS.find((skeleton) => skeleton.id === 'request' || skeleton.id === 'bug' || skeleton.id === 'letter')
   return hit?.id ?? 'generic'
 }

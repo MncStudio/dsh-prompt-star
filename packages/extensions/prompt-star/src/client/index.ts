@@ -17,6 +17,24 @@ export interface PromptStarRemote {
   generate(request: PromptStarRequest): Promise<PromptStarResult>
 }
 
+interface PromptStarSlots {
+  inject(name: string, setup: () => void): void
+  register(
+    entry: {
+      name: string
+      id: string
+      order: number
+      inject: () => { generate: PromptStarRemote['generate'] }
+    },
+    component: typeof StarButton,
+  ): void
+}
+
+type PromptStarClientScope = Context & {
+  remote: { promptStar: PromptStarRemote }
+  slots: PromptStarSlots
+}
+
 /** Cordis services this client plugin needs. */
 export const inject = ['slots', 'remote']
 
@@ -26,15 +44,18 @@ export const inject = ['slots', 'remote']
  * @param ctx - client root context.
  */
 export function apply(ctx: Context): void {
-  ctx.inject(['slots', 'remote'], (scope: Context & { remote: { promptStar: PromptStarRemote } }) => {
-    const promptStar = scope.remote.promptStar
-    scope.slots.inject('conversation.input.right', () => scope.slots.register({
+  ctx.inject(['slots', 'remote'], (scope) => {
+    const promptStarScope = scope as PromptStarClientScope
+    const promptStar = promptStarScope.remote.promptStar
+    promptStarScope.slots.inject('conversation.input.right', () => {
+      promptStarScope.slots.register({
       name: 'conversation.input.right',
       id: 'prompt-star',
       order: 0,
       // The slot's inject face is what the component receives in addition to
       // the session standard seat (useInput / inputActions / useConversation).
       inject: () => ({ generate: promptStar.generate }),
-    }, StarButton))
+      }, StarButton)
+    })
   })
 }

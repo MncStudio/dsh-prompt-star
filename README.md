@@ -10,7 +10,7 @@
 CLIENT 插件 bundle **无法独立构建**——`clientBundle()` 预设依赖 harness 仓库内部模块（`scripts/`、`packages/client/modules/`、`packages/client/web/`），所以必须在 **deepseek-harness workspace 内**构建。因此：
 
 - **你在本地不下载、不构建、不 `pnpm install`**；
-- 构建（连同那 2GB 依赖）全部发生在 **GitHub Actions runner** 上：`.github/workflows/build.yml` 会 checkout harness → 叠加本包 → 装依赖 → 构建 host(`lib/index.js`) + client(`lib/client.js`) → 发布 npm（或打包成 `.tgz` 上传）；
+- 构建（连同那 2GB 依赖）全部发生在 **GitHub Actions runner** 上：`.github/workflows/build.yml` 会 checkout harness → 叠加本包 → 装依赖 → 先用 `tsc` 生成 `lib/types`（含 `@Remote` 装饰器的可执行 JS）→ 构建 host(`lib/index.js`) + client(`lib/client.js`) → 发布 npm（或打包成 `.tgz` 上传）；
 - 你只用 `dsh plugin add <包名>` 安装**构建好的小产物**，或下载 Release 附件。
 
 ## 架构
@@ -44,7 +44,7 @@ dsh-prompt-star/
 dsh plugin --profile web add dsh-prompt-star
 
 # 或从本地构建产物 / git
-dsh plugin --profile web add ./dsh-prompt-star-0.1.0.tgz
+dsh plugin --profile web add ./dsh-prompt-star-0.1.1.tgz
 ```
 
 因为声明了 `dsh.bundle`，`dsh` 会把它追加进 profile 的 `dsh.profile.bundles`；验证层生效：
@@ -58,10 +58,10 @@ dsh web                            # 启动（alias: --profile web）
 
 下列依赖 DSH 源码仓库与运行中的 web GUI，离线无法验证；**首次 CI 运行必须据此实测校准**：
 
-1. **构建流水线**——`tsdown.config.ts` 的 `clientBundle()` 需要 harness 的 `tsc` 先出 `lib/types`，且 `DSH_BUILD_FACE`（host/client）如何经 CLI 传递，要和 harness 的 `pnpm run build` 对齐。CI 里我先用 `DSH_BUILD_FACE=<face> pnpm run bundle`，如不对，改成在 harness 根目录按 face 整体构建或按 harness 文档的脚本。
-2. **tsconfig 归入**——新包要成为 harness host/client ts program 成员（`tsconfig.host.json` / `tsconfig.client.json` 的 references 或 include），tsc 才会产出 `lib/types`。
+1. **构建流水线**——`tsdown.config.ts` 的 `clientBundle()` 只接受 `lib/types` 作为输入；CI 已在两个 bundle pass 前运行 `tsc -b packages/extensions/prompt-star/tsconfig.json`，再通过 `tsdown --env.DSH_BUILD_FACE <host|client>` 选择构建面。
+2. **tsconfig 归入**——插件自有的 composite `tsconfig.json` 明确引用它使用的 harness 包，因此不依赖修改 harness 根目录的 `tsconfig.host.json` / `tsconfig.client.json`。
 3. **typert 远程类型**——`@Remote('generate')` 后 client 侧 `ctx.remote.promptStar` 由 typert 生成；`src/client/index.ts` 里用局部接口占位。
-4. **`dsh-llm` 的 `purpose`**——`GenerateOptions.purpose` 类型为 `'compaction' | 'session-title'`，本插件用 `'prompt-star'`（`src/host/generate.ts` 已 cast）；要一等类型需给 `packages/llm/llm/src/types.ts` 该联合加 `'prompt-star'`。
+4. **`dsh-llm` 的 `purpose`**——当前发布版只接受 `'compaction' | 'session-title'`，因此插件不传此字段，以兼容已发布的 DSH。若 Harness 日后增加 `'prompt-star'`，可再传入该用途以启用提供方的专用策略。
 5. **workspace 根目录**——`src/host/generate.ts` 用 `request.workspaceRoot ?? process.cwd()`；规范做法是走会话 workspace 服务（`ctx.workspaceFiles` / `dsh-util-workspace-path`）取真实根 + `FileSystem.contains` 授权。
 6. **UI 位置**——⭐ 按钮最终渲染位置要看运行中的 web GUI（`conversation.input.right` 或改挂 `conversation.composer.dock`）。
 

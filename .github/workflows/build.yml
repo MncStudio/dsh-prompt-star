@@ -67,17 +67,21 @@ jobs:
         working-directory: harness
         run: pnpm install --no-frozen-lockfile
 
-      # tsc 先出 lib/types（host pass），随后 tsdown 出浏览器 bundle。
+      # clientBundle 的输入是 tsc 发出的 lib/types。这个步骤既发出声明，
+      # 也会把 @Remote 标准装饰器降级成 Node 能解析的 JavaScript。
+      - name: 编译插件 TypeScript
+        working-directory: harness
+        run: pnpm exec tsc -b packages/extensions/prompt-star/tsconfig.json
+
+      # 随后 tsdown 分别产出 Node host 与浏览器 client bundle。
       # 面由 DSH_BUILD_FACE 决定：host -> lib/index.js，client -> lib/client.js。
       - name: 构建 host 半
         working-directory: harness/packages/extensions/prompt-star
-        run: |
-          DSH_BUILD_FACE=host pnpm run bundle
+        run: pnpm run bundle:host
 
       - name: 构建 client 半
         working-directory: harness/packages/extensions/prompt-star
-        run: |
-          DSH_BUILD_FACE=client pnpm run bundle
+        run: pnpm run bundle:client
 
       - name: 校验产物
         working-directory: harness/packages/extensions/prompt-star

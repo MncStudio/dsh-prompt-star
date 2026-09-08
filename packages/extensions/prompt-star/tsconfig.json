@@ -1,19 +1,17 @@
 {
+  "extends": "../../../tsconfig.base.json",
   "compilerOptions": {
     "jsx": "react-jsx",
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
-    "target": "ES2024",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "noEmit": true,
-    "types": ["node"],
-    "skipLibCheck": true,
-    "esModuleInterop": true,
-    "resolveJsonModule": true,
-    "verbatimModuleSyntax": true,
-    "allowImportingTsExtensions": true,
-    "rewriteRelativeImportExtensions": true
+    "rootDir": "src",
+    "outDir": "lib/types"
   },
-  "include": ["src", "templates"]
+  "include": ["src"],
+  "references": [
+    { "path": "../../../vendor/cordis" },
+    { "path": "../../typert/protocol" },
+    { "path": "../../llm/llm" },
+    { "path": "../../util/timeout" },
+    { "path": "../../util/values" }
+  ]
 }

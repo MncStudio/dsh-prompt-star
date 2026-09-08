@@ -22,14 +22,11 @@ declare module '@deepseek-ai/cordis' {
 
 /** Host service backing the generated `ctx.remote.promptStar` namespace. */
 export class PromptStarService extends TypertRemoteService {
-  static inject = ['typert']
-
-  private readonly ctx: Context
+  static inject = ['typert', 'agentDefaultModel']
 
   /** @param ctx - Host context exposing the LLM and workspace services. */
   constructor(ctx: Context) {
     super(ctx, 'promptStar', { namespace: 'promptStar' })
-    this.ctx = ctx
   }
 
   /**

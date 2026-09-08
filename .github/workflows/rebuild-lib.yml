@@ -87,6 +87,15 @@ jobs:
           test -f lib/index.js && test -f lib/client.js && echo "bundles OK"
           ls -la lib
 
+      - name: 清理构建残留（sourcemap/tsbuildinfo，不入库）
+        working-directory: harness/packages/extensions/prompt-star
+        run: |
+          find lib -type f -name '*.js.map' -delete
+          find lib -type f -name '*.d.ts.map' -delete
+          rm -f lib/tsconfig.tsbuildinfo
+          echo "残留已清理，lib/ 仅保留白名单产物："
+          find lib -type f | sort
+
       - name: 同步新 lib/ 回插件仓库
         run: |
           rm -rf plugin/packages/extensions/prompt-star/lib

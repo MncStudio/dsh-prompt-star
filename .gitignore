@@ -2,6 +2,9 @@
 node_modules/
 packages/extensions/prompt-star/dist/
 dist/
+# 构建残留（sourcemap/tsbuildinfo）不入库
+packages/extensions/prompt-star/lib/**/*.map
+packages/extensions/prompt-star/lib/tsconfig.tsbuildinfo
 
 # os
 .DS_Store

@@ -30,6 +30,11 @@ env:
   HARNESS_REF: ${{ github.event.inputs.harness_ref || 'master' }}
   NODE_VERSION: '22'
 
+# npm publish --provenance 需要 OIDC（Sigstore）：必须给本 workflow write 的 id-token 权限
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   build:
     runs-on: ubuntu-latest

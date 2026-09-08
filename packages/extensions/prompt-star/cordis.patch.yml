@@ -1,0 +1,14 @@
+# Host-side plugin rows contributed by the dsh-prompt-star bundle.
+#
+# `dsh-plugin-add` reads `dsh.bundle.patch` from package.json, applies this
+# layer on top of the profile's bundle list (after @deepseek-ai/dsh-base), and
+# `dsh --profile <name> --dump-config` shows a "# == dsh-prompt-star" layer.
+#
+# The rows below activate the Host service that reads project doc files and
+# calls the configured model. The client ⭐ button is a separate browser bundle
+# (dsh.client manifest) that the web app loads by id; it is not a Host row.
+- insert:
+    - id: prompt-star
+      name: dsh-prompt-star
+      # The host service is the package's default export; no config yet.
+      # config: ... any `config` you wire into the Cordis Loader.

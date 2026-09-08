@@ -1,0 +1,14 @@
+# node / build
+node_modules/
+packages/extensions/prompt-star/lib/
+packages/extensions/prompt-star/dist/
+dist/
+
+# os
+.DS_Store
+
+# logs
+*.log
+
+# vscode
+.vscode/

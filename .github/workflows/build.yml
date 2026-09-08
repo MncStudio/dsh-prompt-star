@@ -1,0 +1,103 @@
+name: build-publish
+
+# 在 CI 上构建 dsh-prompt-star，而不是在本地。CI runner 负责：
+#   1) checkout deepseek-harness（108M 源码 + 随后 pnpm install 的依赖，都不在你机器上）
+#   2) 叠加本插件包（packages/extensions/prompt-star）
+#   3) 构建 host (lib/index.js) + client (lib/client.js)
+#   4) 发布到 npm（或挂 Makefile 的 Release 附件）
+# 你只需要 `dsh plugin add <包名>` 安装成品。
+#
+# 注意：部分构建命令依赖 harness 的实际 build 流水线（tsc -> lib/types，
+# tsdown 的 --env.DSH_BUILD_FACE 传递、web 组合名册、typert 远程类型生成）。
+# 首次 CI 运行必须据此文档和 harness 的 `pnpm run build` 实测校准。
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      harness_ref:
+        description: 'deepseek-harness 要 checkout 的 ref（branch/tag/commit）'
+        required: false
+        default: 'main'
+      publish:
+        description: '发布到 npm（需要 NPM_TOKEN secret）'
+        type: boolean
+        default: false
+
+env:
+  HARNESS_REF: ${{ github.event.inputs.harness_ref || 'main' }}
+  NODE_VERSION: '22'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出插件仓库
+        uses: actions/checkout@v4
+        with:
+          path: plugin
+
+      - name: 检出 deepseek-harness
+        uses: actions/checkout@v4
+        with:
+          repository: deepseek-ai/deepseek-harness
+          ref: ${{ env.HARNESS_REF }}
+          path: harness
+
+      - name: 叠加插件包进 harness
+        run: |
+          mkdir -p harness/packages/extensions/prompt-star
+          cp -r plugin/packages/extensions/prompt-star/. harness/packages/extensions/prompt-star/
+
+      - name: 启用 Node + pnpm
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: 启用 corepack/pnpm
+        run: corepack enable && corepack prepare pnpm@latest --activate
+
+      - name: 安装 harness 依赖（重活在 runner 上）
+        working-directory: harness
+        run: pnpm install --no-frozen-lockfile
+
+      # tsc 先出 lib/types（host pass），随后 tsdown 出浏览器 bundle。
+      # 面由 DSH_BUILD_FACE 决定：host -> lib/index.js，client -> lib/client.js。
+      - name: 构建 host 半
+        working-directory: harness/packages/extensions/prompt-star
+        run: |
+          DSH_BUILD_FACE=host pnpm run bundle
+
+      - name: 构建 client 半
+        working-directory: harness/packages/extensions/prompt-star
+        run: |
+          DSH_BUILD_FACE=client pnpm run bundle
+
+      - name: 校验产物
+        working-directory: harness/packages/extensions/prompt-star
+        run: |
+          test -f lib/index.js && test -f lib/client.js && echo "bundles OK"
+          ls -la lib
+
+      - name: 打包（仅发布 lib/ + 声明文件 + cordis.patch.yml）
+        working-directory: plugin
+        run: |
+          mkdir -p dist
+          cp -r harness/packages/extensions/prompt-star/lib dist/lib
+          cp harness/packages/extensions/prompt-star/cordis.patch.yml dist/
+          cp harness/packages/extensions/prompt-star/package.json dist/
+          (cd dist && npm pack)
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-prompt-star-build
+          path: plugin/dist/*.tgz
+
+      - name: 发布到 npm
+        if: ${{ github.event.inputs.publish == 'true' || startsWith(github.ref, 'refs/tags/v') }}
+        working-directory: plugin/dist
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public

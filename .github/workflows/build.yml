@@ -80,24 +80,22 @@ jobs:
           test -f lib/index.js && test -f lib/client.js && echo "bundles OK"
           ls -la lib
 
-      - name: 打包（仅发布 lib/ + 声明文件 + cordis.patch.yml）
-        working-directory: plugin
+      - name: 打包
         run: |
-          mkdir -p dist
-          cp -r harness/packages/extensions/prompt-star/lib dist/lib
-          cp harness/packages/extensions/prompt-star/cordis.patch.yml dist/
-          cp harness/packages/extensions/prompt-star/package.json dist/
-          (cd dist && npm pack)
+          # 直接在 harness 包目录上 npm pack：files 只会带 lib/ + cordis.patch.yml + package.json
+          npm pack ./harness/packages/extensions/prompt-star
+          ls -la dsh-prompt-star-*.tgz
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
           name: dsh-prompt-star-build
-          path: plugin/dist/*.tgz
+          path: dsh-prompt-star-*.tgz
 
       - name: 发布到 npm
         if: ${{ github.event.inputs.publish == 'true' || startsWith(github.ref, 'refs/tags/v') }}
-        working-directory: plugin/dist
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --provenance --access public
+        run: |
+          printf '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}\n' > .npmrc
+          npm publish dsh-prompt-star-*.tgz --provenance --access public

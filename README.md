@@ -22,14 +22,15 @@ dsh plugin --profile web add dsh-prompt-star
 2. 读取项目的**说明文件**（README / AGENTS / CLAUDE / .cursorrules 等，读不到就跳过）；
 3. 把这些拼成一份**结果清晰、上下文完整、可直接用的提示词**，`setDraft` 写回输入框。
 
-不在本地构建、不上传你的代码、不发起任何外部网络请求——只复用 DSH 已配置好的模型与工作区。
+不在本地构建、不上传你的代码、不发起任何外部网络请求——只在本地读项目说明文件与草稿，客户端组装成提示词。
+> 说明：插件不调用 DSH 的生成模型（当前 DSH 的 LLM 接口按 `purpose` 门控，不适合三方插件做任意文本生成），而是**确定性**地把项目文档与草稿拼成一份完整、自包含的提示词，使你在发送时无需重复交代项目背景，更省 token。
 
-## 架构：纯 client 插件
+## 架构：host 读文档 + RPC 通道
 
-这是**纯 client 插件**，不依赖自定义 host↔client RPC，因此能跑在任何 stock `dsh web` 组合里：
+插件用 **通用 Connection RPC**（`ctx.connection.rpc`）在 host 与 client 之间传递项目文档——这是三方插件可靠访问 host 的标准方式。
 
-- **client**（`src/client/`）：⭐ 组件挂进 `conversation.input.right` 槽位；用 `useInput()` 读草稿、`inputActions.setDraft()` 写回；通过**已挂载的内置 `workspaceFiles` remote** 读取项目说明文件。
-- **host**（`src/index.ts`）：仅提供一个最小 `apply(ctx)`，让插件行挂载，从而让 `dsh-client-modules` 发现并服务其 client bundle。
+- **host**（`src/index.ts`）：用 `ctx.connection.rpc.handle('/dsh-prompt-star', ...)` 注册通道，经 `ctx.fs` 读取项目说明文件（README / AGENTS / CLAUDE / .cursorrules 等，读不到就跳过），返回给 client。
+- **client**（`src/client/`）：⭐ 组件挂进 `conversation.input.right` 槽位；用 `useInput()` 读草稿、`inputActions.setDraft()` 写回；点按后用 `ctx.connection.rpc.call('/dsh-prompt-star', 'context', {})` 向 host 要项目文档，再在客户端组装成完整提示词。
 
 目录结构：
 
@@ -41,11 +42,11 @@ dsh-prompt-star/
     ├── cordis.patch.yml             # host 插件行
     ├── tsdown.config.ts             # clientBundle('dsh-prompt-star', ..., { hostPhase:true })
     └── src/
-        ├── index.ts                 # host: 最小 apply(ctx)
-        ├── types.ts                 # 共享类型
+        ├── index.ts                 # host: apply(ctx) + connection.rpc.handle 读文档
+        ├── types.ts                 # 共享 RPC 协议（通道/端点/结果类型）
         └── client/
-            ├── index.ts             # client apply + slot 注册
-            └── StarButton.tsx       # ⭐ 按钮组件
+            ├── index.ts             # client apply + slot 注册 + rpc.call
+            └── StarButton.tsx       # ⭐ 按钮组件（读草稿+组装+setDraft）
 ```
 
 ## 发布模型
@@ -56,6 +57,7 @@ client bundle 依赖 harness 仓库内部模块（`clientBundle()` 预设），�
 
 - 完全本地生成，不上传代码（用户项目常涉内网/涉密）。
 - 读取**只读**：仅读取工作区内的说明文件与草稿，不修改源文件。
+- 说明文件按 **DSH 进程工作目录**探测（`process.cwd()`）；若当前会话工作区不是该目录，可能读不到文档（读不到则按草稿整理，不报错）。
 - 意图精确匹配、可视化模板编辑器、无说明文件时“帮你生成 CLAUDE.md”弹窗：属后续迭代。
 
 ## 许可证

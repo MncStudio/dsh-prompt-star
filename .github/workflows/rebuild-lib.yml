@@ -1,0 +1,128 @@
+name: rebuild-lib
+
+# 自动流水：改源码 → 重建 lib/ → 提交回仓库 →（可选）重固定 DSH-Store
+#
+# 背景：DSH-Store 用「固定 commit」装插件（git 安装不跑构建脚本 → 我们刻意保持
+# “无生命周期脚本”这一最干净的安全档位）。因此每次改 src/ 都必须把新构建的
+# lib/ 提交回仓库，否则市场里装的还是旧 lib/，改动不生效。
+#
+# 触发范围只含源码/构建配置，不含 lib/ —— 本工作流自己 push 出的 lib/ 提交
+# 不会再次触发自身（无循环）。GITHUB_TOKEN 产生的 commit 默认也不触发工作流。
+#
+# 重固定 DSH-Store（跨仓库写 AI-Scarlett/DSH-Store issue #641）需要 PAT：
+#   仓库 Settings → Secrets → Actions → 新增 DSH_STORE_TOKEN
+#   值：一个有 AI-Scarlett/DSH-Store 的 issues:write（repo scope）的 token
+# 若未配置，本步骤自动跳过；DSH-Store 的「8 小时 catalog 策略」仍会在下个周期
+# 自动把固定点挪到当前 main。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/extensions/prompt-star/src/**'
+      - 'packages/extensions/prompt-star/package.json'
+      - 'packages/extensions/prompt-star/tsconfig.json'
+      - 'packages/extensions/prompt-star/tsdown.config.ts'
+      - 'packages/extensions/prompt-star/cordis.patch.yml'
+      - 'packages/extensions/prompt-star/templates/**'
+  workflow_dispatch:
+
+env:
+  HARNESS_REF: 'master'
+  NODE_VERSION: '22'
+
+permissions:
+  contents: write
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出插件仓库（带历史，便于对比）
+        uses: actions/checkout@v4
+        with:
+          path: plugin
+          fetch-depth: 0
+
+      - name: 检出 deepseek-harness
+        uses: actions/checkout@v4
+        with:
+          repository: deepseek-ai/deepseek-harness
+          ref: ${{ env.HARNESS_REF }}
+          path: harness
+
+      - name: 叠加插件包进 harness
+        run: |
+          mkdir -p harness/packages/extensions/prompt-star
+          cp -r plugin/packages/extensions/prompt-star/. harness/packages/extensions/prompt-star/
+
+      - name: 启用 Node + pnpm
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: 启用 corepack/pnpm
+        run: corepack enable && corepack prepare pnpm@latest --activate
+
+      - name: 安装 harness 依赖
+        working-directory: harness
+        run: pnpm install --no-frozen-lockfile
+
+      - name: 编译插件 TypeScript（发 lib/types）
+        working-directory: harness
+        run: pnpm exec tsc -b packages/extensions/prompt-star/tsconfig.json
+
+      - name: 构建 host bundle
+        working-directory: harness/packages/extensions/prompt-star
+        run: pnpm run bundle:host
+
+      - name: 构建 client bundle
+        working-directory: harness/packages/extensions/prompt-star
+        run: pnpm run bundle:client
+
+      - name: 校验产物
+        working-directory: harness/packages/extensions/prompt-star
+        run: |
+          test -f lib/index.js && test -f lib/client.js && echo "bundles OK"
+          ls -la lib
+
+      - name: 同步新 lib/ 回插件仓库
+        run: |
+          rm -rf plugin/packages/extensions/prompt-star/lib
+          cp -r harness/packages/extensions/prompt-star/lib plugin/packages/extensions/prompt-star/lib
+
+      - name: 检查 lib/ 是否有变化
+        id: changed
+        working-directory: plugin
+        run: |
+          git add packages/extensions/prompt-star/lib
+          if git diff --cached --quiet; then
+            echo "lib 无变化，跳过提交"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "lib 有变化，准备提交"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 提交并推送新 lib/
+        if: steps.changed.outputs.changed == 'true'
+        working-directory: plugin
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: 自动重建 lib/（随 src 变更）"
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push origin main
+
+      - name: 重触发 DSH-Store 重固定（需 DSH_STORE_TOKEN）
+        if: ${{ steps.changed.outputs.changed == 'true' && secrets.DSH_STORE_TOKEN != '' }}
+        env:
+          DSH_STORE_TOKEN: ${{ secrets.DSH_STORE_TOKEN }}
+        run: |
+          # 编辑 DSH-Store 提交 issue，触发机器人把固定点挪到当前 main（含新 lib/ 的 commit）。
+          # 用「追加正文标记」触发 edited（不依赖仓库里是否存在某个 label）。
+          SHA="$(git -C plugin rev-parse HEAD)"
+          BODY="$(GH_TOKEN="$DSH_STORE_TOKEN" gh issue view 641 --repo AI-Scarlett/DSH-Store --json body -q .body)"
+          MARKER="$(printf '\n\n---\nauto-rebuilt lib at %s' "${SHA:0:12}")"
+          GH_TOKEN="$DSH_STORE_TOKEN" gh issue edit 641 --repo AI-Scarlett/DSH-Store \
+            --body "${BODY}${MARKER}"
+          echo "已触发 DSH-Store 重固定（issue #641，commit ${SHA:0:12}）"

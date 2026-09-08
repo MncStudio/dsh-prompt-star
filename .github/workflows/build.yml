@@ -97,5 +97,7 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          printf '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}\n' > .npmrc
+          # 务必用双引号让 shell 展开 token；单引号会把字面 ${NODE_AUTH_TOKEN} 写进 .npmrc
+          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > .npmrc
+          # 每个新版本要先在 package.json 里升 version（npm 不允许重复发布同一版本）
           npm publish dsh-prompt-star-*.tgz --provenance --access public

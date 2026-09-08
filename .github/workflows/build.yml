@@ -18,16 +18,16 @@ on:
   workflow_dispatch:
     inputs:
       harness_ref:
-        description: 'deepseek-harness 要 checkout 的 ref（branch/tag/commit）'
+        description: 'deepseek-harness 要 checkout 的 ref（branch/tag/commit；默认分支是 master）'
         required: false
-        default: 'main'
+        default: 'master'
       publish:
         description: '发布到 npm（需要 NPM_TOKEN secret）'
         type: boolean
         default: false
 
 env:
-  HARNESS_REF: ${{ github.event.inputs.harness_ref || 'main' }}
+  HARNESS_REF: ${{ github.event.inputs.harness_ref || 'master' }}
   NODE_VERSION: '22'
 
 jobs:

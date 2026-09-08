@@ -1,0 +1,21 @@
+/**
+ * Client plugin: mounts the ⭐ button into the composer input tool row
+ * (`conversation.input.right`, a session-scoped list slot) and wires it to the
+ * host's `/dsh-prompt-star` Connection RPC channel.
+ *
+ * This client half only needs the slot registry and the `connection` service.
+ * On click the button asks the host for project doc context (the browser cannot
+ * read file contents itself), then assembles the fuller prompt on the client and
+ * writes it back with `inputActions.setDraft`.
+ */
+import type { Context } from '@deepseek-ai/cordis';
+/** Cordis services this client plugin needs: the slot registry and the
+ *  Connection service (both provided by the stock web-app composition). */
+export declare const inject: string[];
+/**
+ * Client plugin body: register the ⭐ button once the slot registry and the
+ * Connection service are up.
+ * @param ctx - client root context.
+ */
+export declare function apply(ctx: Context): void;
+//# sourceMappingURL=index.d.ts.map

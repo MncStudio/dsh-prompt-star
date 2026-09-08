@@ -1,6 +1,5 @@
 # node / build
 node_modules/
-packages/extensions/prompt-star/lib/
 packages/extensions/prompt-star/dist/
 dist/
 

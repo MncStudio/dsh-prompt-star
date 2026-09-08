@@ -30,6 +30,8 @@ on:
 env:
   HARNESS_REF: 'master'
   NODE_VERSION: '22'
+  # 可选：跨仓库重固定 DSH-Store 用的 PAT（未配置时为 ''，重固定步骤自动跳过）
+  DSH_STORE_TOKEN: ${{ secrets.DSH_STORE_TOKEN }}
 
 permissions:
   contents: write
@@ -114,9 +116,7 @@ jobs:
           git push origin main
 
       - name: 重触发 DSH-Store 重固定（需 DSH_STORE_TOKEN）
-        if: ${{ steps.changed.outputs.changed == 'true' && secrets.DSH_STORE_TOKEN != '' }}
-        env:
-          DSH_STORE_TOKEN: ${{ secrets.DSH_STORE_TOKEN }}
+        if: ${{ steps.changed.outputs.changed == 'true' && env.DSH_STORE_TOKEN != '' }}
         run: |
           # 编辑 DSH-Store 提交 issue，触发机器人把固定点挪到当前 main（含新 lib/ 的 commit）。
           # 用「追加正文标记」触发 edited（不依赖仓库里是否存在某个 label）。

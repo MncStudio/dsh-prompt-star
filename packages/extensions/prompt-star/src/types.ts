@@ -1,45 +1,38 @@
 /**
- * Shared request/result types for the prompt-star host Remote namespace.
- * Kept free of Cordis/Node so the client bundle can import them.
+ * dsh-prompt-star — host↔client RPC protocol (shared vocabulary).
+ *
+ * Transport: the generic Connection RPC channel `/dsh-prompt-star`
+ * (the host registers it with `ctx.connection.rpc.handle`, the browser calls
+ * `ctx.connection.rpc.call('/dsh-prompt-star', endpoint, payload)`).
+ *
+ * The host sells exactly one capability: reading a few project documentation
+ * files for the current workspace (it CAN read file contents natively; the
+ * browser client cannot). Everything else — assembling the fuller prompt from
+ * the draft + that context — stays on the client.
  */
 
-/** One project doc file the host probes and may read as context. */
-export interface DocFileSource {
-  /** Absolute path as resolved on the host. */
-  readonly path: string
-  /** Basename (CLAUDE.md / AGENTS.md / .cursorrules / README.md). */
-  readonly name: string
-  /** Whether the file existed and was read. */
-  readonly read: boolean
-  /** Bytes read, capped; 0 when `read` is false. */
-  readonly bytes: number
-}
+/** Absolute logical Connection RPC channel owned by this plugin. */
+export const RPC_CHANNEL = '/dsh-prompt-star'
 
-/** Client → Host: a click of ⭐ with the current draft. */
-export interface PromptStarRequest {
-  /** Current draft text (the editor's clipboard-text projection). */
-  readonly draft: string
+/** Channel-relative endpoint that reads project doc files on the host. */
+export const EP_CONTEXT = 'context'
+
+export interface GenerateContextRequest {
   /**
-   * Session workspace root when the client knows it, else undefined and the
-   * host falls back to its own resolution / process.cwd().
+   * Optional workspace directory to probe for doc files. When absent the host
+   * falls back to the DSH process working directory.
    */
-  readonly workspaceRoot?: string
-  /** Pick a template intent explicitly; empty lets the model infer it. */
-  readonly intent?: string
-  /** Optional caller cancellation; the host falls back to an internal deadline. */
-  readonly signal?: AbortSignal
+  cwd?: string
 }
 
-/** Host → Client: the generated prompt ready to fill the input. */
-export interface PromptStarResult {
-  /** Generated full prompt text. */
-  readonly prompt: string
-  /** Intent/template the model chose (or the supplied `intent`). */
-  readonly intent: string
-  /** Doc files the host probed for context. */
-  readonly sources: readonly DocFileSource[]
-  /** Model route actually used (provider/model when available). */
-  readonly model?: { readonly provider: string; readonly model: string }
-  /** True when a transient/LLM failure was swallowed and `prompt` is a best-effort copy. */
-  readonly degraded: boolean
+export interface DocContext {
+  /** One entry per successfully read project-doc file. */
+  docs: Array<{ name: string; text: string }>
+  /** Number of doc files read. */
+  filesRead: number
 }
+
+/** The `context` endpoint's success/error envelope (Connection RPC result). */
+export type ContextRpcResult =
+  | { ok: true; value: DocContext }
+  | { ok: false; error: { code: string; message: string; details: object } }

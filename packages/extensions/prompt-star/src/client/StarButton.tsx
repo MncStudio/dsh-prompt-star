@@ -1,48 +1,32 @@
 /**
  * The ⭐ button rendered beside the conversation input.
  *
- * Pure-client plugin: on click it reads the current draft (from the session
- * input snapshot), reads a few project doc files through the already-mounted
- * `workspaceFiles` remote, and assembles a fuller, more efficient prompt on the
- * client, then writes it back with `inputActions.setDraft`. The user presses
- * Ctrl/Cmd+Z if they want the original draft back.
+ * On click it reads the current draft (session input snapshot), asks the host
+ * (over the `/dsh-prompt-star` Connection RPC channel) to read a few project
+ * doc files as context, assembles a fuller, more efficient prompt on the client,
+ * then writes it back with `inputActions.setDraft`. Press Ctrl/Cmd+Z to restore
+ * the original draft.
  *
  * The slot framework composes this component's props: the session standard seat
- * (`useInput`, `inputActions`, `sessionId`) plus the register-time `workspaceFiles`
- * face the client plugin injects. The interfaces below are the minimal structural
- * shapes this component needs; they match the mounted `workspaceFiles` remote and
- * the composed slot props without importing the harness client types.
+ * (`useInput`, `inputActions`) plus the register-time `context` face this client
+ * plugin injects. The interfaces below are the minimal structural shapes this
+ * component needs; they match the composed slot props without importing the
+ * harness client types.
  */
 
 import { useState, type CSSProperties, type ReactElement } from 'react'
-
-/** Minimal structural face of the mounted `workspaceFiles` remote. */
-export interface WorkspaceFilesRemote {
-  read(
-    sessionId: string,
-    path: string,
-    range: { offset?: number; limit?: number },
-    signal?: AbortSignal,
-  ): Promise<{ ok: boolean; value?: { text: string; eof?: boolean } }>
-  list(
-    sessionId: string,
-    path: string,
-    signal?: AbortSignal,
-  ): Promise<{ ok: boolean; value?: { entries: Array<{ name: string; type: string }> } }>
-}
+import type { ContextRpcResult } from '../types'
 
 export interface StarButtonProps {
-  /** Mounted `workspaceFiles` remote (reads project docs). */
-  workspaceFiles: WorkspaceFilesRemote
+  /** Host RPC caller that returns the project doc context. */
+  context(): Promise<ContextRpcResult>
   /** Session input snapshot hook (returns the current draft). */
   useInput(): { draft: string }
   /** Session public input actions (write the whole draft). */
   inputActions: { setDraft(text: string): void }
-  /** Current session identity, used as the wire identity for file reads. */
-  sessionId: string
 }
 
-/** Common project-doc filenames probed as prompt context. */
+/** Common project-doc filenames probed on the host as prompt context. */
 const DOC_CANDIDATES: readonly string[] = [
   'README.md',
   'README',
@@ -74,36 +58,9 @@ interface DocContext {
   readonly filesRead: number
 }
 
-/** Best-effort read of project doc files; every read is guarded so a missing
- *  or unreadable file is skipped rather than breaking the button. */
-async function gatherContext(
-  workspaceFiles: WorkspaceFilesRemote,
-  sessionId: string,
-): Promise<DocContext> {
-  const docs: Array<{ name: string; text: string }> = []
-  const seen = new Set<string>()
-  let filesRead = 0
-  for (const path of DOC_CANDIDATES) {
-    try {
-      const result = await workspaceFiles.read(sessionId, path, { offset: 1, limit: 120 })
-      if (result.ok && result.value?.text) {
-        const text = result.value.text.trim()
-        if (text.length > 0 && !seen.has(path)) {
-          seen.add(path)
-          docs.push({ name: path, text })
-          filesRead += 1
-        }
-      }
-    } catch {
-      // Not present / not readable: leave it out.
-    }
-  }
-  return { docs, filesRead }
-}
-
-/** Assemble a fuller, structured prompt from the draft + any project context. */
+/** Build a fuller, structured prompt from the draft + any project context. */
 function assemblePrompt(draft: string, context: DocContext): string {
-  const projectContext = context.filesRead === 0
+  const projectContext = context.docs.length === 0
     ? '（未读取到项目文档）'
     : context.docs.map((doc) => `## ${doc.name}\n${doc.text}`).join('\n\n')
 
@@ -124,12 +81,7 @@ function assemblePrompt(draft: string, context: DocContext): string {
   ].join('\n')
 }
 
-export function StarButton({
-  workspaceFiles,
-  useInput,
-  inputActions,
-  sessionId,
-}: StarButtonProps): ReactElement {
+export function StarButton({ context, useInput, inputActions }: StarButtonProps): ReactElement {
   const input = useInput()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | undefined>(undefined)
@@ -143,14 +95,19 @@ export function StarButton({
     setBusy(true)
     setError(undefined)
     try {
-      const context = await gatherContext(workspaceFiles, sessionId)
-      const full = assemblePrompt(draft, context)
+      const res = await context()
+      if (!res.ok) {
+        setError(`读取项目文档失败: ${res.error?.message ?? '未知错误'}`)
+        return
+      }
+      const value = res.value as DocContext
+      const full = assemblePrompt(draft, value)
       if (full && full !== draft) {
         inputActions.setDraft(full)
         setError(
-          context.filesRead === 0
+          value.docs.length === 0
             ? '已按草稿整理（未读取到项目文档）'
-            : `已整理并读取 ${context.filesRead} 个项目文档`,
+            : `已整理并读取 ${value.docs.length} 个项目文档`,
         )
       } else {
         setError('未生成新内容')

@@ -1,6 +1,6 @@
 {
   "name": "dsh-prompt-star",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "DSH plugin: a ⭐ button beside the conversation input that reads your draft + the project's doc files and turns them into a fuller, more efficient prompt, filling the input directly (Ctrl/Cmd+Z to undo).",
   "publishConfig": {
     "access": "public"
@@ -29,13 +29,8 @@
       "patch": "./cordis.patch.yml"
     },
     "client": {
-      "external": [
-        "@deepseek-ai/dsh-api-gateway/client"
-      ],
       "inject": [
-        "@deepseek-ai/dsh-api-gateway",
-        "@deepseek-ai/dsh-client-connection",
-        "@deepseek-ai/dsh-client-locale"
+        "@deepseek-ai/dsh-client-connection"
       ],
       "platform": "web"
     }
@@ -49,11 +44,9 @@
   ],
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
-    "@deepseek-ai/dsh-typert-protocol": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-llm": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.1.2-rc.1",
+    "@deepseek-ai/dsh-client-connection": "^0.1.2-rc.1",
+    "@deepseek-ai/dsh-fs": "^0.1.2-rc.1",
     "@deepseek-ai/dsh-client-ui-conversation": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-client-store": "^0.1.2-rc.1",
     "react": "^18.3.1"
   },
   "devDependencies": {

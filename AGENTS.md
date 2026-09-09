@@ -4,7 +4,7 @@
 > 目的：下一轮工作不跑偏、不重复犯错。
 >
 > 文件名用 `AGENTS.md` 是刻意的——DSH 新会话会自动读取项目根目录的这类文件。
-> 最后更新：2026-09-09 04:00 UTC
+> 最后更新：2026-09-09 06:15 UTC
 
 ---
 
@@ -86,8 +86,8 @@ DSH-Store 用**固定 commit** 做 git 安装，而 git 安装**不执行构建�
 
 ### 协作偏好
 
-- 用户会**自己看**商城状态 → 不要替他盯。
-- 用户选择**保留** `marketplace-freshness.yml` 工作流（见 §4），不要擅自删。
+- 用户会**自己看**商城状态 → 不要替他盯、不要轮询。
+- **不要创建任何自动 / 定时任务。** 2026-09-09 用户选择「全停」：脉冲作业已停止、`cron` 已删除、自我续期已移除。`marketplace-freshness.yml` 现在**只有手动 `workflow_dispatch`**。**不要擅自恢复自动触发、cron 或自我续期。**
 
 ---
 
@@ -95,7 +95,7 @@ DSH-Store 用**固定 commit** 做 git 安装，而 git 安装**不执行构建�
 
 | # | 坑 | 现象 | 根因 | 修法 |
 |---|---|---|---|---|
-| 1 | **以为「提交 issue = 上架」** | 提交了 issue，商城目录里却一直没有 | 提交 issue 只触发**预检**；真正收录靠 DSH-Store 的**定时雷达**（catalog-automation），它用 GitHub 搜索 `topic:dsh-plugin` 等**按 updated_at 倒序取前 20**，每轮最多新增 8 个 | 加 `marketplace-freshness.yml` 周期性刷新 `updated_at`（收录后自动停）。⚠️ 但仍不可靠，见 §5 |
+| 1 | **以为「提交 issue = 上架」** | 提交了 issue，商城目录里却一直没有 | 提交 issue 只触发**预检**；真正收录靠 DSH-Store 的**定时雷达**（catalog-automation），它用 GitHub 搜索 `topic:dsh-plugin` 等**按 updated_at 倒序取前 20**，每轮最多新增 8 个 | 曾加 `marketplace-freshness.yml` 周期性刷新 `updated_at`。⚠️ 既不可靠，也已按用户要求停用，见 §5 |
 | 2 | **上架门槛缺失** | 即使被扫到也会被自动批准拦下 | 自动批准要求：仓库 LICENSE 与清单一致、显式 `dsh.compatibility.dsh`、显式 `engines.node`。当时**没有 LICENSE**、缺这两个字段 | `1f69cd6`：加 MIT `LICENSE`；`package.json` 补 `engines.node: ">=20"` + `dsh.compatibility` |
 | 3 | **构建残留被提交进仓库** | 自动重建流水线把 `.js.map` / `.d.ts.map` / `tsconfig.tsbuildinfo` 也提交了（`d3339e3`） | 流水线直接 `cp` 整个 `lib/` 再 `git add`，没过滤非白名单产物 | `7170918`：workflow 加「清理构建残留」步骤 + `.gitignore` 忽略 + 解除追踪 |
 | 4 | **workflow 的 `if:` 里用 `secrets.X`** | 工作流报错 / 不生效 | GitHub Actions 不允许在 `if:` 表达式里直接引用 `secrets` | `28b0cf0`：改为在 `env:` 里引用 |
@@ -105,12 +105,13 @@ DSH-Store 用**固定 commit** 做 git 安装，而 git 安装**不执行构建�
 | 8 | **以为能自己开 PR 上架** | registry/README 写「新增插件必须通过 PR 修改条目」，一度想直接开 PR | DSH-Store 近 50 个 PR **只有仓库主人和自动化机器人**，外部 PR 从无先例 | 放弃 PR 路径，回到雷达发现 |
 | 9 | **脉冲提交会触发全量构建** | 每次脉冲都跑一次 build-publish（pnpm install 108M harness，很重） | build-publish 的 `push` 没有 `paths` 过滤 | `build.yml` 加 `paths-ignore: ['pulse/**']`；脉冲只改 `pulse/timestamp.txt`（tag 推送不评估路径过滤，发布不受影响） |
 | 10 | **`git reset --hard` 冲掉未提交改动** | 写好的 workflow 改动被 reset 掉，提交时报 "nothing to commit" | 在推送前对含未提交改动的工作树执行了 `git reset --hard origin/main` | 推送前用 `git pull --rebase`；**不要**在有未提交改动时 `reset --hard` |
+| 11 | **取消脉冲作业反而拉起一个新作业** | `gh run cancel 34308880689` 后 20 秒，立刻出现新的 `34317891151`（in_progress） | 旧的「续期」步骤带 `if: always()`，**作业被取消时也会执行**，于是又 `gh workflow run` 了一次 | 先 `gh workflow disable marketplace-freshness.yml` 掐断触发，再 `gh run cancel`；续期步骤现已删除 |
 
 ---
 
-## 4. 当前状态（截至 2026-09-09 04:00 UTC）
+## 4. 当前状态（截至 2026-09-09 06:15 UTC）
 
-**结论：尚未被 DSH-Store 收录，但发现通道已经打通并持续运行。**
+**结论：尚未被 DSH-Store 收录。自动脉冲已按用户要求全部停止，现在仓库里没有任何自动 / 定时任务。**
 
 已完成：
 
@@ -119,7 +120,7 @@ DSH-Store 用**固定 commit** 做 git 安装，而 git 安装**不执行构建�
 - ✅ `package.json` 补齐 `engines.node` + `dsh.compatibility`（`0.1.2-rc.1: compatible`，即 npm `latest`）
 - ✅ npm 已发布 `0.1.3`
 - ✅ `lib/` 已提交（可 git 安装）+ 自动重建流水线
-- ✅ `marketplace-freshness.yml` 已改为**长期脉冲作业**（见 §5），实测把我们在两个 topic 查询里稳定推回 #2/#3
+- ⛔ 自动脉冲**已按用户要求停止**（2026-09-09 06:10 UTC）：正在跑的 run 已取消、`cron` 已删除、自我续期步骤已移除。`marketplace-freshness.yml` 现在**只能手动跑**（`workflow_dispatch`，输入 `minutes` 控制时长），跑完即止、不会续期
 
 未完成：
 
@@ -147,16 +148,23 @@ DSH-Store 用**固定 commit** 做 git 安装，而 git 安装**不执行构建�
 - `marketplace-watchdog.yml` 只是重试/修复雷达，不提供别的入口。
 - **排名信号只跟默认分支的提交走**：改 topics / 推分支 / 推 tag 都无效（见 §3 坑 6）。
 
-### 已实施的解法（长期脉冲作业）
+### 曾经用过、现已停用的解法（长期脉冲作业）—— 不要重新启用
 
-`.github/workflows/marketplace-freshness.yml`：
+**2026-09-09 用户明确选择「全停」。下面这套已经拆掉：`cron` 删除、自我续期删除、正在跑的 run 取消。**
+
+曾经的做法（`.github/workflows/marketplace-freshness.yml`）：
 
 - 每 **6 分钟**往 main 写一次 `pulse/timestamp.txt` 并推送 → 刷新排名信号；
 - 作业跑约 **3h50m**，结束后**用 `gh workflow run` 触发自身续期**（因为本仓库 `schedule` 根本不触发，见 §3 坑 7）；
-- 发现 `candidates.json` / `catalog-index.json` 出现本仓库就**立即停止**（也不再续期）；
-- `build.yml` 加了 `paths-ignore: ['pulse/**']`，脉冲**不会**触发全量构建。
+- 发现 `candidates.json` / `catalog-index.json` 出现本仓库就**立即停止**。
 
-代价：每天约 180–240 个脉冲提交（仓库历史会很吵）。用户已知情并选择了此方案。
+为什么停：代价是每天约 **180–240 个脉冲提交**，仓库历史极吵，用户不接受。
+
+**当前状态**：工作流只剩手动 `workflow_dispatch`（输入 `minutes`，默认 60、上限 235），跑完即止。
+`pulse/timestamp.txt` 和 `build.yml` 里的 `paths-ignore: ['pulse/**']` 保留（无害）。
+
+⚠️ 取消正在跑的脉冲时要小心：旧续期步骤带 `if: always()`，**取消也会触发它重新 dispatch**
+（实测发生过，见 §3 坑 11）。正确做法是先 `gh workflow disable`，再 `gh run cancel`。
 
 ### 自查命令
 
@@ -172,8 +180,12 @@ for q in 'topic:deepseek-harness' 'topic:dsh-plugin'; do
     --jq '[.items[].full_name] | index("MncStudio/dsh-prompt-star") // "不在前20"'
 done
 
-# 3) 脉冲是否还在跑
-gh run list --repo MncStudio/dsh-prompt-star --workflow marketplace-freshness.yml --limit 3
+# 3) 确认没有任何作业在跑（应为空；脉冲已停用）
+gh run list --repo MncStudio/dsh-prompt-star --limit 10 --json databaseId,name,status,event \
+  --jq '.[] | select(.status != "completed") | "\(.databaseId) \(.name) [\(.event)]"'
+
+# 3b) 确认工作流没有任何自动触发器（不应出现 cron / schedule）
+grep -rn 'cron\|schedule:' .github/workflows/ || echo "无 cron，OK"
 
 # 4) 雷达上次/下次运行
 gh run list --repo AI-Scarlett/DSH-Store --workflow catalog-automation.yml --limit 5
@@ -181,10 +193,12 @@ gh run list --repo AI-Scarlett/DSH-Store --workflow catalog-automation.yml --lim
 
 ### 如果长时间仍未被收录
 
-1. 先确认脉冲还在跑（上面第 3 条）——作业若断了，手动 `gh workflow run marketplace-freshness.yml` 重启一次即可。
-2. 确认我们确实在某个查询的前 20（上面第 2 条）。若不在，说明脉冲频率不够，可把 `sleep 360` 调小（如 240）。
-3. 雷达本身可能很久不跑（实测延迟 3–4.5 小时，甚至更久），**不要在雷达没跑的情况下就判定失败**。
-4. 仍不行才考虑：降低提交噪声（换更聪明的触发）或接受「脉冲提交很吵」的观感风险。
+1. 确认我们是否在某个查询的前 20（上面第 2 条）。**脉冲已停用，所以大概率不在前 20 —— 这是预期结果，不是故障。**
+2. 雷达本身可能很久不跑（实测延迟 3–4.5 小时，甚至更久），**不要在雷达没跑的情况下就判定失败**。
+3. **不要擅自重启脉冲、加回 cron 或恢复自我续期。** 想换方案先问用户。可选方向：
+   - 用**一次性、少量**的推送代替持续脉冲；
+   - 再去 DSH-Store 仓库 / issue 里确认是否存在**人工收录通道**（目前结论是没有，但可复核）。
+4. 只有用户明确同意后，才参考上面「曾经用过、现已停用的解法」重建（并提醒它每 6 分钟一次提交）。
 
 ---
 
@@ -196,7 +210,7 @@ gh run list --repo AI-Scarlett/DSH-Store --workflow catalog-automation.yml --lim
 |---|---|---|
 | `.github/workflows/build.yml` | CI 构建 +（可选）发布 npm | push main / tag、手动 |
 | `.github/workflows/rebuild-lib.yml` | 改源码 → 重建 `lib/` → 清残留 → 有变化才提交 →（可选）重固定 DSH-Store | push 改到 `src/**`、`package.json`、`tsconfig.json`、`tsdown.config.ts`、`cordis.patch.yml`、`templates/**`；手动 |
-| `.github/workflows/marketplace-freshness.yml` | 未被收录期间**长期脉冲**：每 6 分钟往 main 推一次 `pulse/timestamp.txt`；跑 ~3h50m 后自我续期；收录后自动停 | 每 4 小时（cron 保底，实测不触发）+ 自我续期、手动 |
+| `.github/workflows/marketplace-freshness.yml` | **手动**脉冲工具，**无任何自动触发**：跑 `minutes` 分钟（默认 60、上限 235），每 6 分钟往 main 推一次 `pulse/timestamp.txt`；跑完即止、不续期 | 仅手动 `workflow_dispatch` |
 
 ### 常用命令
 

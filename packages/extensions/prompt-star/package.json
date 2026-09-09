@@ -33,6 +33,12 @@
         "@deepseek-ai/dsh-client-connection"
       ],
       "platform": "web"
+    },
+    "compatibility": {
+      "dsh": ">=0.1.2-rc.1",
+      "dshReleases": {
+        "0.1.2-rc.1": "compatible"
+      }
     }
   },
   "files": [
@@ -60,6 +66,9 @@
     "bundle:host": "tsdown --env.DSH_BUILD_FACE host",
     "bundle:client": "tsdown --env.DSH_BUILD_FACE client",
     "watch": "tsdown --watch"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "license": "MIT"
 }

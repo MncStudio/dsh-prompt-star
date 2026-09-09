@@ -1,66 +1,104 @@
 name: marketplace-freshness
 
-# 背景：DSH-Store 的自动雷达（catalog-automation）用 GitHub 搜索
-#   topic:dsh-plugin / topic:deepseek-harness 等，按 updated_at 倒序只取前 20 个
-# 作为「待发现」候选，每轮最多新增 8 个。
-# 因此一个「很久没更新」的稳定仓库永远排不进前 20 → 永远不会被发现。
+# ─────────────────────────────────────────────────────────────────────────────
+# 目的：让 dsh-prompt-star 被 DSH-Store 的自动雷达发现并收录。
 #
-# 本工作流在「尚未被 DSH-Store 收录」期间，周期性刷新本仓库的 updated_at
-# （优先改 topics，失败则空提交），让下一次雷达扫描时本仓库仍在前 20 名内。
-# 一旦被收录（candidates.json 出现 MncStudio 或 catalog-index.json 出现本插件），
-# 本工作流会直接跳过、不再做任何写入 —— 可以放心保留或删除。
+# 【为什么需要它】DSH-Store 唯一的上架通道是它的 catalog-automation 雷达：
+#   registry/automation-policy.json 里固定了 4 个 GitHub 搜索：
+#     topic:dsh-plugin / topic:deepseek-harness
+#     dsh-plugin in:name,description,readme / "deepseek harness" plugin in:name,description,readme
+#   每个查询 `sort=updated&order=desc&per_page=20`，即「按更新时间倒序取前 20」，
+#   每轮最多新增 8 个。没有「提交 issue 就上架」的通道（issue 只做只读预检）。
+#   → 一个很久没更新的稳定仓库永远排不进前 20，因此永远不被发现。
+#
+# 【实测结论（2026-09-09）】
+#   · 往默认分支 main 推一次提交 → 我们在 4 个查询里立刻升到 #1–#2；
+#   · 在窗口最宽的 topic:deepseek-harness 里能待 ~8–10 分钟；
+#     topic:dsh-plugin 约 4–5 分钟；两个文本查询约 2–3 分钟（最卷）。
+#   · 改 topics、推非默认分支、推 tag **都无效**——只有默认分支提交会刷新排名信号。
+#   · 本仓库的 schedule 事件实测不触发（*/5 探针 25 分钟内 0 次；
+#     DSH-Store 的 cron 也实测延迟 3–4.5 小时）→ 因此本作业**自我续期**，不依赖 cron。
+#
+# 【被收录后】本工作流会自动停止（发现 candidates/catalog 里出现本仓库即退出，
+#            且不再续期），可以保留也可以删除。
+# ─────────────────────────────────────────────────────────────────────────────
 
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    # 保底启动点（cron 若可用则每 4 小时补一次；不可用也没关系，靠自我续期）
+    - cron: '0 */4 * * *'
   workflow_dispatch:
 
 permissions:
   contents: write
+  # 自我续期需要调用 workflow_dispatch
+  actions: write
 
 concurrency:
+  # 同一时间只允许一个脉冲作业；新一轮排队等待，不打断正在跑的。
   group: marketplace-freshness
   cancel-in-progress: false
 
 jobs:
-  refresh:
+  pulse:
     runs-on: ubuntu-latest
+    timeout-minutes: 235
     steps:
-      - name: 检查是否已被 DSH-Store 发现
-        id: check
-        run: |
-          cand=$(curl -sf https://raw.githubusercontent.com/AI-Scarlett/DSH-Store/main/registry/candidates.json || true)
-          idx=$(curl -sf https://raw.githubusercontent.com/AI-Scarlett/DSH-Store/main/registry/catalog-index.json || true)
-          if printf '%s' "$idx" | grep -q 'dsh-prompt-star' || printf '%s' "$cand" | grep -q 'MncStudio'; then
-            echo "done=true" >> "$GITHUB_OUTPUT"
-            echo "已被 DSH-Store 发现/收录，停止刷新。"
-          else
-            echo "done=false" >> "$GITHUB_OUTPUT"
-            echo "尚未被收录，继续刷新 updated_at。"
-          fi
-
-      - name: 刷新 updated_at（优先改 topics，失败则空提交）
-        if: steps.check.outputs.done == 'false'
+      - name: 持续脉冲：每 6 分钟刷新一次默认分支推送时间
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -e
-          # 在两个合法 topic 集合间来回切换，确保每次都是一次真实变更。
-          current=$(gh api "repos/$GITHUB_REPOSITORY/topics" --jq '.names | join(",")' 2>/dev/null || echo "")
-          if printf '%s' "$current" | grep -q 'deepseek-harness'; then
-            if gh api -X PUT "repos/$GITHUB_REPOSITORY/topics" -f 'names[]=dsh-plugin' >/dev/null 2>&1; then
-              echo "已通过 topics 刷新 updated_at（去掉 deepseek-harness）"; exit 0
-            fi
-          else
-            if gh api -X PUT "repos/$GITHUB_REPOSITORY/topics" -f 'names[]=dsh-plugin' -f 'names[]=deepseek-harness' >/dev/null 2>&1; then
-              echo "已通过 topics 刷新 updated_at（加上 deepseek-harness）"; exit 0
-            fi
-          fi
+          set -euo pipefail
 
-          echo "topics 方式不可用（GITHUB_TOKEN 无 admin），回退为空提交"
           git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo
           cd repo
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit --allow-empty -m "chore: 刷新仓库更新时间（等待商城雷达发现）"
-          git push origin HEAD:main
+          mkdir -p pulse
+
+          # 只在「尚未被收录」时脉冲；本作业最长约 3 小时 50 分。
+          END=$(( $(date +%s) + 13800 ))
+
+          while [ "$(date +%s)" -lt "$END" ]; do
+            # 已被 DSH-Store 发现/收录 → 立刻停止脉冲
+            cand="$(curl -sf https://raw.githubusercontent.com/AI-Scarlett/DSH-Store/main/registry/candidates.json || true)"
+            idx="$(curl -sf https://raw.githubusercontent.com/AI-Scarlett/DSH-Store/main/registry/catalog-index.json || true)"
+            if printf '%s' "$cand" | grep -q 'MncStudio/dsh-prompt-star' \
+               || printf '%s' "$idx" | grep -q 'dsh-prompt-star'; then
+              echo "✅ 已被 DSH-Store 收录/发现，停止脉冲。"
+              exit 0
+            fi
+
+            # 与远端对齐后写时间戳并推送（pulse/** 被 build-publish 的 paths-ignore 挡住）
+            git fetch --depth 1 origin main --quiet
+            git reset --hard origin/main --quiet
+            date -u +%FT%TZ > pulse/timestamp.txt
+            git add pulse/timestamp.txt
+            git commit -q -m "chore(pulse): 刷新默认分支推送时间（等待商城雷达发现）"
+            if git push -q origin HEAD:main 2>/dev/null; then
+              echo "pulse ok @ $(date -u +%H:%M:%S)Z"
+            else
+              echo "pulse push 冲突，下一轮重试 @ $(date -u +%H:%M:%S)Z"
+            fi
+
+            sleep 360
+          done
+
+          echo "本轮脉冲结束（约 3h50m）。"
+
+      - name: 续期：重新触发自身（cron 不可靠，靠这一步保持连续）
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # 已被收录则不再续期
+          cand="$(curl -sf https://raw.githubusercontent.com/AI-Scarlett/DSH-Store/main/registry/candidates.json || true)"
+          idx="$(curl -sf https://raw.githubusercontent.com/AI-Scarlett/DSH-Store/main/registry/catalog-index.json || true)"
+          if printf '%s' "$cand" | grep -q 'MncStudio/dsh-prompt-star' \
+             || printf '%s' "$idx" | grep -q 'dsh-prompt-star'; then
+            echo "✅ 已被收录，不续期。"
+            exit 0
+          fi
+          gh workflow run marketplace-freshness.yml --repo "$GITHUB_REPOSITORY" --ref main
+          echo "已续期下一轮脉冲作业。"

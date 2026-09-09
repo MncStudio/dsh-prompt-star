@@ -15,6 +15,11 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+    # pulse/** 只被 marketplace-freshness 的保鲜脉冲改动，不承载任何构建产物，
+    # 用它挡住脉冲提交、避免每次脉冲都触发一次完整构建。
+    # 注意：GitHub 对 tag 推送不评估路径过滤，所以 v* 标签发布不受影响。
+    paths-ignore:
+      - 'pulse/**'
   workflow_dispatch:
     inputs:
       harness_ref:

@@ -1,0 +1,66 @@
+name: marketplace-freshness
+
+# 背景：DSH-Store 的自动雷达（catalog-automation）用 GitHub 搜索
+#   topic:dsh-plugin / topic:deepseek-harness 等，按 updated_at 倒序只取前 20 个
+# 作为「待发现」候选，每轮最多新增 8 个。
+# 因此一个「很久没更新」的稳定仓库永远排不进前 20 → 永远不会被发现。
+#
+# 本工作流在「尚未被 DSH-Store 收录」期间，周期性刷新本仓库的 updated_at
+# （优先改 topics，失败则空提交），让下一次雷达扫描时本仓库仍在前 20 名内。
+# 一旦被收录（candidates.json 出现 MncStudio 或 catalog-index.json 出现本插件），
+# 本工作流会直接跳过、不再做任何写入 —— 可以放心保留或删除。
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: marketplace-freshness
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检查是否已被 DSH-Store 发现
+        id: check
+        run: |
+          cand=$(curl -sf https://raw.githubusercontent.com/AI-Scarlett/DSH-Store/main/registry/candidates.json || true)
+          idx=$(curl -sf https://raw.githubusercontent.com/AI-Scarlett/DSH-Store/main/registry/catalog-index.json || true)
+          if printf '%s' "$idx" | grep -q 'dsh-prompt-star' || printf '%s' "$cand" | grep -q 'MncStudio'; then
+            echo "done=true" >> "$GITHUB_OUTPUT"
+            echo "已被 DSH-Store 发现/收录，停止刷新。"
+          else
+            echo "done=false" >> "$GITHUB_OUTPUT"
+            echo "尚未被收录，继续刷新 updated_at。"
+          fi
+
+      - name: 刷新 updated_at（优先改 topics，失败则空提交）
+        if: steps.check.outputs.done == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          # 在两个合法 topic 集合间来回切换，确保每次都是一次真实变更。
+          current=$(gh api "repos/$GITHUB_REPOSITORY/topics" --jq '.names | join(",")' 2>/dev/null || echo "")
+          if printf '%s' "$current" | grep -q 'deepseek-harness'; then
+            if gh api -X PUT "repos/$GITHUB_REPOSITORY/topics" -f 'names[]=dsh-plugin' >/dev/null 2>&1; then
+              echo "已通过 topics 刷新 updated_at（去掉 deepseek-harness）"; exit 0
+            fi
+          else
+            if gh api -X PUT "repos/$GITHUB_REPOSITORY/topics" -f 'names[]=dsh-plugin' -f 'names[]=deepseek-harness' >/dev/null 2>&1; then
+              echo "已通过 topics 刷新 updated_at（加上 deepseek-harness）"; exit 0
+            fi
+          fi
+
+          echo "topics 方式不可用（GITHUB_TOKEN 无 admin），回退为空提交"
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo
+          cd repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "chore: 刷新仓库更新时间（等待商城雷达发现）"
+          git push origin HEAD:main

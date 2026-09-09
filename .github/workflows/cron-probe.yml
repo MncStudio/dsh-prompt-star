@@ -1,0 +1,15 @@
+name: cron-probe
+
+# 临时探针：验证本仓库的 schedule 事件到底能不能触发（验证后删除）
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "cron fired at $(date -u +%H:%M:%SZ)"
